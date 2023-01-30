@@ -22,5 +22,7 @@ option = st.selectbox(
     'Which model would you like to use?',
     ('CodeBERT (481 MB)', 'GraphCodeBERT (481 MB)', 'Compressor (3 MB)'))
 
-st.write('Prediction', st.metric(label="Temperature", value="70 °F", delta="1.2 °F"))
-st.write('Cost', st.metric(label="Temperature", value="70 °F", delta="1.2 °F"))
+col1, col2, col3 = st.columns(3)
+col1.metric("Prediction", "70 °F")
+col2.metric("Latency", "9 mph")
+col3.metric("Memory", "86%")
