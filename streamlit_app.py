@@ -6,7 +6,7 @@ st.set_page_config(
    initial_sidebar_state="expanded",
 )
 
-from inference import predict
+from inference import CodeBERT_compressor_predict, CodeBERT_predict, GraphCodeBERT_compressor_predict, GraphCodeBERT_predict
 
 """
 # Welcome to Compressor!
@@ -17,7 +17,7 @@ Below are the examples of using different models to predict whether a given code
 """
 
 txt = st.text_area('Code to analyze', '''
-    // An vulnerable example form ReVeal dataset
+    // An example form ReVeal dataset
     int getulong(const char * numstr, unsigned long int * result) {
     long long int val;
     char * endptr;
@@ -29,32 +29,52 @@ txt = st.text_area('Code to analyze', '''
     * result = (unsigned long int) val;
     return 1;
 }
-    ''')
+    ''', height=250)
 
 # option = st.selectbox(
 #     'Which model would you like to use?',
 #     ('CodeBERT (481 MB)', 'GraphCodeBERT (481 MB)', 'Compressor-CodeBERT (3 MB)', 'Compressor-GraphCodeBERT (3 MB)'))
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Prediction", "70 °F")
-col2.metric("Latency", "9 mph")
-col3.metric("Memory", "86%")
-col4.metric("Memory", "86%")
+latency, pred = CodeBERT_predict(txt)
+if pred:
+    pred = "Vulnerable"
+else:
+    pred = "Safe"
+col1.metric("Model", "CodeBERT")
+col2.metric("Model Size", "481 MB")
+col3.metric("Latency", str(latency*1000)+" ms")
+col4.metric("Prediction", pred)
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Prediction", "70 °F")
-col2.metric("Latency", "9 mph")
-col3.metric("Memory", "86%")
-col4.metric("Memory", "86%")
+latency, pred = CodeBERT_compressor_predict(txt)
+if pred:
+    pred = "Vulnerable"
+else:
+    pred = "Safe"
+col1.metric("Model", "CodeBERT-Compressor")
+col2.metric("Model Size", "481 MB")
+col3.metric("Latency", str(latency*1000)+" ms")
+col4.metric("Prediction", pred)
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Prediction", "70 °F")
-col2.metric("Latency", "9 mph")
-col3.metric("Memory", "86%")
-col4.metric("Memory", "86%")
+latency, pred = GraphCodeBERT_predict(txt)
+if pred:
+    pred = "Vulnerable"
+else:
+    pred = "Safe"
+col1.metric("Model", "GraphCodeBERT")
+col2.metric("Model Size", "481 MB")
+col3.metric("Latency", str(latency*1000)+" ms")
+col4.metric("Prediction", pred)
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Prediction", "70 °F")
-col2.metric("Latency", "9 mph")
-col3.metric("Memory", "86%")
-col4.metric("Memory", "86%")
+latency, pred = GraphCodeBERT_compressor_predict(txt)
+if pred:
+    pred = "Vulnerable"
+else:
+    pred = "Safe"
+col1.metric("Model", "GraphCodeBERT-Compressor")
+col2.metric("Model Size", "481 MB")
+col3.metric("Latency", str(latency*1000)+" ms")
+col4.metric("Prediction", pred)
