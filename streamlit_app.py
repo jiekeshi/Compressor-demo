@@ -1,7 +1,3 @@
-from collections import namedtuple
-import altair as alt
-import math
-import pandas as pd
 import streamlit as st
 
 """
@@ -11,12 +7,20 @@ This demo aims to show that the compressed models produced by Compressor outperf
 
 Below are the examples of using different models to predict whether a given code snippet is vulnerable or not:
 """
+st.set_page_config(
+   page_title="Compressor-demo",
+   page_icon="🧊",
+   layout="wide",
+   initial_sidebar_state="expanded",
+)
 
-txt = st.text_area('Text to analyze', '''
-    It was the best of times, it was the worst of times, it was
-    the age of wisdom, it was the age of foolishness, it was
-    the epoch of belief, it was the epoch of incredulity, it
-    was the season of Light, it was the season of Darkness, it
-    was the spring of hope, it was the winter of despair, (...)
+txt = st.text_area('Code to analyze', '''
+    aaaa
     ''')
-st.write('Sentiment:', txt)
+
+option = st.selectbox(
+    'Which model would you like to use?',
+    ('CodeBERT (481 MB)', 'GraphCodeBERT (481 MB)', 'Compressor (3 MB)'))
+
+st.write('Prediction', st.metric(label="Temperature", value="70 °F", delta="1.2 °F"))
+st.write('Cost', st.metric(label="Temperature", value="70 °F", delta="1.2 °F"))
