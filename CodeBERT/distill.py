@@ -1,217 +1,164 @@
-import os
-import json
-import torch
-import logging
+# coding=utf-8
+# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
+# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Fine-tuning the library models for language modeling on a text file (GPT, GPT-2, BERT, RoBERTa).
+GPT and GPT-2 are fine-tuned using a causal language modeling (CLM) loss while BERT and RoBERTa are fine-tuned
+using a masked language modeling (MLM) loss.
+"""
+
+from __future__ import absolute_import, division, print_function
+
 import argparse
-import warnings
+import glob
+import logging
+import os
+import pickle
+import random
+import re
+import shutil
+
 import numpy as np
-import torch.nn.functional as F
+import torch
+from torch.utils.data import DataLoader, Dataset, SequentialSampler, RandomSampler,TensorDataset
+from torch.utils.data.distributed import DistributedSampler
+import json
 
-from tqdm import tqdm
-from models import Model, distill_loss
-from utils import set_seed, DistilledDataset
-from sklearn.metrics import recall_score, precision_score, f1_score
-from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
-from transformers import AdamW, get_linear_schedule_with_warmup, RobertaConfig, RobertaForSequenceClassification
+from tqdm import tqdm, trange
+import multiprocessing
+from .model import Model
+cpu_cont = multiprocessing.cpu_count()
+from transformers import (WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup,
+                          BertConfig, BertForMaskedLM, BertTokenizer,
+                          GPT2Config, GPT2LMHeadModel, GPT2Tokenizer,
+                          OpenAIGPTConfig, OpenAIGPTLMHeadModel, OpenAIGPTTokenizer,
+                          RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer,
+                          DistilBertConfig, DistilBertForMaskedLM, DistilBertTokenizer)
 
-
-warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
 
-def train(args, model, train_dataloader, eval_dataloader):
-    num_steps = len(train_dataloader) * args.epochs
-    no_decay = ["bias", "LayerNorm.weight"]
-    total_params = sum(p.numel() for p in model.parameters())
-    logger.info(f"{total_params:,} total parameters.")
-    logger.info(f"{total_params*4/1e6} MB model size")
-    optimizer_grouped_parameters = [
-        {"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)]}
-    ]
+MODEL_CLASSES = {
+    'gpt2': (GPT2Config, GPT2LMHeadModel, GPT2Tokenizer),
+    'openai-gpt': (OpenAIGPTConfig, OpenAIGPTLMHeadModel, OpenAIGPTTokenizer),
+    'bert': (BertConfig, BertForMaskedLM, BertTokenizer),
+    'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
+    'distilbert': (DistilBertConfig, DistilBertForMaskedLM, DistilBertTokenizer)
+}
 
-    optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_steps*0.1,
-                                                num_training_steps=num_steps)
-    dev_best_acc = 0
 
-    for epoch in range(args.epochs):
-        model.train()
-        tr_num = 0
-        train_loss = 0
 
-        logger.info("Epoch [{}/{}]".format(epoch + 1, args.epochs))
-        bar = tqdm(train_dataloader, total=len(train_dataloader))
-        bar.set_description("Train")
-        for batch in bar:
-            texts = batch[0].to("cuda")
-            soft_knowledge = batch[3].to("cuda")
-            preds = model(texts)
-            loss = distill_loss(preds, soft_knowledge)
+class InputFeatures(object):
+    """A single training/test features for a example."""
+    def __init__(self,
+                 input_tokens,
+                 input_ids,
+                 label,
 
-            loss.backward()
-            train_loss += loss.item()
-            tr_num += 1
+    ):
+        self.input_tokens = input_tokens
+        self.input_ids = input_ids
+        self.label=label
 
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
 
-        dev_results = evaluate(model, eval_dataloader)
-        dev_acc = dev_results["eval_acc"]
-        if dev_acc >= dev_best_acc:
-            dev_best_acc = dev_acc
-            output_dir = os.path.join(args.model_dir, str(args.count), "best")
-            os.makedirs(output_dir, exist_ok=True)
-            torch.save(model.state_dict(), os.path.join(output_dir, "model.bin"))
-            logger.info("New best model found and saved.")
-        # else:
-        #     output_dir = os.path.join(args.model_dir, args.size, "recent")
-        #     os.makedirs(output_dir, exist_ok=True)
-        #     torch.save(model.state_dict(), os.path.join(output_dir, "model.bin"))
-        
-        logger.info("Train Loss: {0}, Val Acc: {1}, Val Precision: {2}, Val Recall: {3}, Val F1: {4}".format(train_loss/tr_num, dev_results["eval_acc"], dev_results["eval_precision"], dev_results["eval_recall"], dev_results["eval_f1"]))
-    return dev_best_acc
+def convert_examples_to_features(text,tokenizer):
+    #source
+    code=text
+    source_ids = tokenizer.encode(code).ids[:400-2]
+    source_ids = [tokenizer.token_to_id(
+        "<s>")]+source_ids+[tokenizer.token_to_id("</s>")]
+    padding_length = 400 - len(source_ids)
+    source_ids += [tokenizer.token_to_id("<pad>")] * padding_length
+    return InputFeatures(code,source_ids, 0)
+
+class TextDataset(Dataset):
+    def __init__(self, tokenizer, text):
+        self.examples = []
+
+        self.examples.append(convert_examples_to_features(text,tokenizer))
+
+    def __len__(self):
+        return len(self.examples)
+
+    def __getitem__(self, i):
+        return torch.tensor(self.examples[i].input_ids),torch.tensor(self.examples[i].label)
 
 
 import time
+def test(model, tokenizer, text, best_threshold=0):
+    #build dataloader
+    eval_dataset = TextDataset(tokenizer, text)
+    eval_sampler = SequentialSampler(eval_dataset)
+    eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=1, num_workers=4)
 
-def evaluate(model, eval_dataloader):
+    eval_loss = 0.0
+    nb_eval_steps = 0
     model.eval()
-    predict_all = []
-    labels_all = []
-    time_count = []
-    with torch.no_grad():
-        bar = tqdm(eval_dataloader, total=len(eval_dataloader))
-        bar.set_description("Evaluation")
-        for batch in bar:
-            texts = batch[0].to("cpu")
-            label = batch[1].to("cpu")
-            time_start = time.time()
-            prob = model(texts)
-            time_end = time.time()
-            prob = F.softmax(prob)
-            predict_all.append(prob.cpu().numpy())
-            labels_all.append(label.cpu().numpy())
-            time_count.append(time_end-time_start)
-    print(sum(time_count)/len(time_count))
+    logits=[]
+    labels=[]
+    latency = 0
+    for batch in tqdm(eval_dataloader):
+        (inputs_ids,
+        label)=[x.cpu()  for x in batch]
+        with torch.no_grad():
+            start = time.time()
+            logit = model(inputs_ids)
+            latency += time.time() - start
 
-    predict_all = np.concatenate(predict_all, 0)
-    labels_all = np.concatenate(labels_all, 0)
-
-    preds = predict_all[:, 0] > 0.5
-    recall = recall_score(labels_all, preds)
-    precision = precision_score(labels_all, preds)
-    f1 = f1_score(labels_all, preds)
-    results = {
-        "eval_acc": np.mean(labels_all==preds),
-        "eval_precision": float(precision),
-        "eval_recall": float(recall),
-        "eval_f1": float(f1)
-    }
-    return results
+            logits.append(logit.cpu().numpy())
+            labels.append(label.cpu().numpy())
+        nb_eval_steps += 1
 
 
-def main():
-    parser = argparse.ArgumentParser()
+    #output result
+    logits=np.concatenate(logits,0)
 
-    parser.add_argument("--train_data_file", default=None, type=str, required=True,
-                        help="The input training data file (a text file).")
-    parser.add_argument("--eval_data_file", default=None, type=str,
-                        help="An optional input evaluation data file to evaluate the perplexity on (a text file).")
-    parser.add_argument("--block_size", default=-1, type=int,
-                        help="Optional input sequence length after tokenization."
-                             "The training dataset will be truncated in block of this size for training."
-                             "Default to the model max input length for single sentence inputs (take into account special tokens).")
-    parser.add_argument("--model_dir", default="./surrogate", type=str,
-                        help="The output directory where the model predictions and checkpoints will be written.")
-    parser.add_argument("--do_train", action="store_true",
-                        help="Whether to run training.")
-    parser.add_argument("--do_eval", action="store_true",
-                        help="Whether to run eval on the dev set.")
-    parser.add_argument("--choice", default="best", type=str,
-                        help="Model to test")
-    parser.add_argument("--size", default="3", type=str,
-                        help="Model size")                 
-    parser.add_argument("--vocab_size", default=10000, type=int,
-                        help="Vocabulary Size.")
-    parser.add_argument("--attention_heads", default=8, type=int,
-                        help="attention_heads")
-    parser.add_argument("--hidden_dim", default=512, type=int,
-                        help="Hidden dim of student model.")
-    parser.add_argument("--n_layers", default=1, type=int,
-                        help="Num of layers in student model.")
-    parser.add_argument("--intermediate_size", default=1, type=int)
-    parser.add_argument("--train_batch_size", default=16, type=int,
-                        help="Batch size per GPU/CPU for training.")
-    parser.add_argument("--eval_batch_size", default=16, type=int,
-                        help="Batch size per GPU/CPU for evaluation.")
-    parser.add_argument("--learning_rate", default=5e-4, type=float,
-                        help="The initial learning rate for Adam.")
-    parser.add_argument("--seed", type=int, default=42,
-                        help="random seed for initialization")
-    parser.add_argument("--epochs", type=int, default=42,
-                        help="random seed for initialization")
+    preds=logits[:,0]>best_threshold
 
-    args = parser.parse_args()
-    args.device = torch.device("cpu")
-    # args.device = torch.device("cuda")
-    args.n_gpu = torch.cuda.device_count()
+    return latency, preds
 
-    args.per_gpu_train_batch_size = args.train_batch_size//args.n_gpu
-    args.per_gpu_eval_batch_size = args.eval_batch_size//args.n_gpu
+from tokenizers import Tokenizer
 
-    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
-                        datefmt="%m/%d/%Y %H:%M:%S",
-                        level=logging.INFO)
-    logger.info("Device: %s, n_gpu: %s", args.device, args.n_gpu)
+def distill_pred(code):
 
-    set_seed(args.seed)
+    # Setup CUDA, GPU
+    device = torch.device("cpu")
+
+    config = RobertaConfig.from_pretrained("microsoft/graphcodebert-base")
+
+    config.num_labels=2
+
+    tokenizer = Tokenizer.from_file("BPE_27505.json")
+
     n_labels = 2
+    # n_layers = 2
 
-    surrogate_set = []
-    with open("compressor.jsonl") as f:
-        for line in f:
-            surrogate_set.append(json.loads(line.strip()))
+    config = RobertaConfig.from_pretrained("microsoft/graphcodebert-base")
 
-    accs = []
-    args.count = 101
-    for su in tqdm(surrogate_set):
-        logger.info("No. %d", args.count)
-        config = RobertaConfig.from_pretrained("microsoft/codebert-base")
-        config.num_labels = n_labels
-        config.num_attention_heads = su["attention_heads"]
-        config.hidden_size = su["hidden_dim"]
-        config.intermediate_size = su["intermediate_size"]
-        config.vocab_size = su["vocab_size"]
-        config.num_hidden_layers = su["n_layers"]
-        config.hidden_dropout_prob = 0.2
-        model = Model(RobertaForSequenceClassification(config=config))
+    config.num_labels = n_labels
+    config.num_attention_heads = 2
+    config.hidden_size = 24
+    config.intermediate_size = 1508
+    config.vocab_size = 27505
+    config.num_hidden_layers = 1
+    config.hidden_dropout_prob = 0.3
+    model = Model(RobertaForSequenceClassification(
+        config=config), config, tokenizer)
 
-        train_dataset = DistilledDataset(args, su["vocab_size"], args.train_data_file, logger)
-        train_sampler = RandomSampler(train_dataset)
-        train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+    checkpoint_prefix = 'c_model.bin'
+    model.load_state_dict(torch.load(checkpoint_prefix, map_location=torch.device('cpu')))
+    model.to(device)
+    latency, res = test(model, tokenizer, code, best_threshold=0.5)
 
-        eval_dataset = DistilledDataset(args, su["vocab_size"], args.eval_data_file, logger)
-        eval_sampler = SequentialSampler(eval_dataset)
-        eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size, num_workers=8, pin_memory=True)
-        
-        model.to(args.device)
-
-        model_dir = os.path.join(args.model_dir, str(args.count), "best", "model.bin")
-        model.load_state_dict(torch.load(model_dir))
-        model.to(args.device)
-        eval_res = evaluate(model, eval_dataloader)
-        logger.info("Acc: {0}, Precision: {1}, Recall: {2}, F1: {3}".format(eval_res["eval_acc"], eval_res["eval_precision"], eval_res["eval_recall"], eval_res["eval_f1"]))
-
-        # dev_best_acc = train(args, model, train_dataloader, eval_dataloader)
-
-        # accs.append(eval_res["eval_acc"])
-        
-        args.count += 1
-    
-    # with open("accs.jsonl", "w") as wf:
-    #     for acc in accs:
-    #         wf.write(str(acc))
-    #         wf.write("\n")
-
-if __name__ == "__main__":
-    main()
+    return latency, res
