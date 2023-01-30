@@ -20,7 +20,7 @@ txt = st.text_area('Code to analyze', '''
 
 option = st.selectbox(
     'Which model would you like to use?',
-    ('CodeBERT (481 MB)', 'GraphCodeBERT (481 MB)', 'Compressor (3 MB)'))
+    ('CodeBERT (481 MB)', 'GraphCodeBERT (481 MB)', 'Compressor-CodeBERT (3 MB)', 'Compressor-GraphCodeBERT (3 MB)'))
 
 col1, col2, col3 = st.columns(3)
 col1.metric("Prediction", "70 °F")
