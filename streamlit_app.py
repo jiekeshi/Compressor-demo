@@ -29,11 +29,7 @@ txt = st.text_area('Code to analyze', '''
     * result = (unsigned long int) val;
     return 1;
 }
-    ''', height=250)
-
-# option = st.selectbox(
-#     'Which model would you like to use?',
-#     ('CodeBERT (481 MB)', 'GraphCodeBERT (481 MB)', 'Compressor-CodeBERT (3 MB)', 'Compressor-GraphCodeBERT (3 MB)'))
+    ''', height=350)
 
 col1, col2, col3, col4 = st.columns(4)
 latency, pred = CodeBERT_predict(txt)
@@ -43,7 +39,7 @@ else:
     pred = "Safe"
 col1.metric("Model", "CodeBERT")
 col2.metric("Model Size", "481 MB")
-col3.metric("Latency", str(latency*1000)+" ms")
+col3.metric("Latency", str(round(latency*1000, 2))+" ms")
 col4.metric("Prediction", pred)
 
 col1, col2, col3, col4 = st.columns(4)
@@ -52,9 +48,9 @@ if pred:
     pred = "Vulnerable"
 else:
     pred = "Safe"
-col1.metric("Model", "CodeBERT-Compressor")
+col1.metric("Model", "CB-Compressor")
 col2.metric("Model Size", "3 MB")
-col3.metric("Latency", str(latency*1000)+" ms")
+col3.metric("Latency", str(round(latency*1000, 2))+" ms")
 col4.metric("Prediction", pred)
 
 col1, col2, col3, col4 = st.columns(4)
@@ -65,7 +61,7 @@ else:
     pred = "Safe"
 col1.metric("Model", "GraphCodeBERT")
 col2.metric("Model Size", "481 MB")
-col3.metric("Latency", str(latency*1000)+" ms")
+col3.metric("Latency", str(round(latency*1000, 2))+" ms")
 col4.metric("Prediction", pred)
 
 col1, col2, col3, col4 = st.columns(4)
@@ -74,7 +70,11 @@ if pred:
     pred = "Vulnerable"
 else:
     pred = "Safe"
-col1.metric("Model", "GraphCodeBERT-Compressor")
+col1.metric("Model", "GCB-Compressor")
 col2.metric("Model Size", "3 MB")
-col3.metric("Latency", str(latency*1000)+" ms")
+col3.metric("Latency", str(round(latency*1000, 2))+" ms")
 col4.metric("Prediction", pred)
+
+"""
+The above results show that the compressed models are able to achieve the same prediction results as the pre-trained models while being significantly smaller and faster.
+"""
