@@ -26,15 +26,16 @@ RUN pip3 install transformers==4.21.1 scikit-learn==1.1.2 tree-sitter==0.20.0 gd
 
 RUN git clone https://github.com/jiekeshi/Compressor-demo.git
 
-RUN cd Compressor-demo
+WORKDIR /app/Compressor-demo
 RUN wget https://smu-my.sharepoint.com/:u:/g/personal/jiekeshi_smu_edu_sg/EVtv62GYmaxKnzFyaj1s59MB1ehAKgW2qaPos7EYs3Xj4Q?download=1 -O graphcodebert.bin
 RUN wget https://smu-my.sharepoint.com/:u:/g/personal/jiekeshi_smu_edu_sg/EYiS9sfki7pLkwAUhYXODPEBHNwBGxVG0TyNUWGuiavGGA?download=1 -O codebert.bin
+
 
 ENV NVIDIA_VISIBLE_DEVICES all
 ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
 
-# EXPOSE 8501
+EXPOSE 8501
 
-# HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
 
-# ENTRYPOINT ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+ENTRYPOINT ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]

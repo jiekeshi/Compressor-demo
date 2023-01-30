@@ -63,7 +63,7 @@ dfg_function={
 #load parsers
 parsers={}
 for lang in dfg_function:
-    LANGUAGE = Language('GraphCodeBERT/parser/my-languages.so', lang)
+    LANGUAGE = Language('/app/Compressor-demo/GraphCodeBERT/parser/my-languages.so', lang)
     parser = Parser()
     parser.set_language(LANGUAGE)
     parser = [parser,dfg_function[lang]]
