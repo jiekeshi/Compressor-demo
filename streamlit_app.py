@@ -1,4 +1,10 @@
 import streamlit as st
+st.set_page_config(
+   page_title="Compressor-demo",
+   page_icon="🧊",
+   layout="wide",
+   initial_sidebar_state="expanded",
+)
 
 """
 # Welcome to Compressor!
@@ -7,12 +13,6 @@ This demo aims to show that the compressed models produced by Compressor outperf
 
 Below are the examples of using different models to predict whether a given code snippet is vulnerable or not:
 """
-st.set_page_config(
-   page_title="Compressor-demo",
-   page_icon="🧊",
-   layout="wide",
-   initial_sidebar_state="expanded",
-)
 
 txt = st.text_area('Code to analyze', '''
     aaaa
