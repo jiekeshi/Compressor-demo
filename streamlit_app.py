@@ -53,7 +53,7 @@ if pred:
 else:
     pred = "Safe"
 col1.metric("Model", "CodeBERT-Compressor")
-col2.metric("Model Size", "481 MB")
+col2.metric("Model Size", "3 MB")
 col3.metric("Latency", str(latency*1000)+" ms")
 col4.metric("Prediction", pred)
 
@@ -75,6 +75,6 @@ if pred:
 else:
     pred = "Safe"
 col1.metric("Model", "GraphCodeBERT-Compressor")
-col2.metric("Model Size", "481 MB")
+col2.metric("Model Size", "3 MB")
 col3.metric("Latency", str(latency*1000)+" ms")
 col4.metric("Prediction", pred)
