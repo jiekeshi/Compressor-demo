@@ -16,22 +16,23 @@ This demo aims to show that the compressed models produced by Compressor outperf
 Below are the examples of using different models to predict whether a given code snippet is vulnerable or not:
 """
 
-txt = st.text_area('Code to analyze', '''
-    // An example form ReVeal dataset
-    int getulong(const char * numstr, unsigned long int * result) {
-    long long int val;
-    char * endptr;
-    errno = 0;
-    val = strtoll(numstr, & endptr, 0);
-    if (('\\0' == * numstr) || ('\\0' != * endptr) || (ERANGE == errno) || (val != (unsigned long int) val)) {
-        return 0;
+with st.form('my_form'):
+    txt = st.text_area('Code to analyze', '''
+        // An example form ReVeal dataset
+        int getulong(const char * numstr, unsigned long int * result) {
+        long long int val;
+        char * endptr;
+        errno = 0;
+        val = strtoll(numstr, & endptr, 0);
+        if (('\\0' == * numstr) || ('\\0' != * endptr) || (ERANGE == errno) || (val != (unsigned long int) val)) {
+            return 0;
+        }
+        * result = (unsigned long int) val;
+        return 1;
     }
-    * result = (unsigned long int) val;
-    return 1;
-}
-    ''', height=450)
-    
-submitted = st.form_submit_button('Submit')
+        ''', height=370)
+
+    submitted = st.form_submit_button('Submit')
 
 col1, col2, col3, col4 = st.columns(4)
 latency, pred = CodeBERT_predict(txt)
