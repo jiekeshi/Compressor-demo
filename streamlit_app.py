@@ -30,6 +30,8 @@ txt = st.text_area('Code to analyze', '''
     return 1;
 }
     ''', height=450)
+    
+submitted = st.form_submit_button('Submit')
 
 col1, col2, col3, col4 = st.columns(4)
 latency, pred = CodeBERT_predict(txt)
