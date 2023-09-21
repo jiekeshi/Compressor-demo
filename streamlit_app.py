@@ -29,14 +29,14 @@ txt = st.text_area('Code to analyze', '''
     * result = (unsigned long int) val;
     return 1;
 }
-    ''', height=350)
+    ''', height=450)
 
 col1, col2, col3, col4 = st.columns(4)
 latency, pred = CodeBERT_predict(txt)
 if pred:
-    pred = "Vulnerable"
+    pred = str(pred)
 else:
-    pred = "Safe"
+    pred = str(pred)
 col1.metric("Model", "CodeBERT")
 col2.metric("Model Size", "481 MB")
 col3.metric("Latency", str(round(latency*1000, 2))+" ms")
